@@ -1,5 +1,6 @@
 // TARGET_BACKEND: JVM
 // WITH_RUNTIME
+// CHECK_BYTECODE_LISTING
 
 class A {
     val x = "outer"

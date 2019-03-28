@@ -1,0 +1,25 @@
+@kotlin.Metadata
+public final class A$Companion {
+    inner class A$Companion
+    private method <init>(): void
+    public synthetic method <init>(@org.jetbrains.annotations.NotNull p0: kotlin.jvm.internal.DefaultConstructorMarker): void
+}
+
+@kotlin.Metadata
+public final class A {
+    public final static @org.jetbrains.annotations.NotNull field Companion: A$Companion
+    public final @org.jetbrains.annotations.NotNull field x$1: java.lang.String
+    public final static @kotlin.jvm.JvmField @org.jetbrains.annotations.NotNull field x: java.lang.String
+    public final @org.jetbrains.annotations.NotNull field y$1: java.lang.String
+    public final static @org.jetbrains.annotations.NotNull field y: java.lang.String
+    inner class A$Companion
+    public final static method <clinit>(): void
+    public method <init>(): void
+    public final @org.jetbrains.annotations.NotNull method getX(): java.lang.String
+    public final @org.jetbrains.annotations.NotNull method getY(): java.lang.String
+}
+
+@kotlin.Metadata
+public final class JvmFieldNoClash2Kt {
+    public final static @org.jetbrains.annotations.NotNull method box(): java.lang.String
+}
