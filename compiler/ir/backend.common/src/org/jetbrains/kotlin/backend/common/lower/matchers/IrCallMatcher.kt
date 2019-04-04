@@ -9,7 +9,6 @@ import org.jetbrains.kotlin.ir.expressions.IrCall
 import org.jetbrains.kotlin.ir.expressions.IrExpression
 import org.jetbrains.kotlin.ir.expressions.IrStatementOrigin
 
-
 internal interface IrCallMatcher : (IrCall) -> Boolean
 
 /**

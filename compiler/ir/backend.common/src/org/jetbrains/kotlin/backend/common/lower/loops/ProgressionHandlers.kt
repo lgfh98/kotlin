@@ -15,11 +15,14 @@ import org.jetbrains.kotlin.ir.builders.irCall
 import org.jetbrains.kotlin.ir.builders.irGet
 import org.jetbrains.kotlin.ir.builders.irInt
 import org.jetbrains.kotlin.ir.declarations.IrDeclarationOrigin
-import org.jetbrains.kotlin.ir.expressions.IrCall
-import org.jetbrains.kotlin.ir.expressions.IrStatementOrigin
+import org.jetbrains.kotlin.ir.expressions.*
+import org.jetbrains.kotlin.ir.expressions.impl.IrCallImpl
+import org.jetbrains.kotlin.ir.expressions.impl.IrConstImpl
 import org.jetbrains.kotlin.ir.types.getClass
 import org.jetbrains.kotlin.ir.types.toKotlinType
+import org.jetbrains.kotlin.ir.util.functions
 import org.jetbrains.kotlin.ir.util.properties
+import org.jetbrains.kotlin.ir.visitors.IrElementVisitor
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.types.SimpleType
@@ -117,42 +120,51 @@ internal class IndicesHandler(val context: CommonBackendContext) : ProgressionHa
         }
 }
 
-/** Builds a [HeaderInfo] for progressions not handled by more specialized handlers. */
-internal class DefaultProgressionHandler(private val context: CommonBackendContext) : HeaderInfoHandler<Nothing?> {
+// TODO: Handle Array.reversed()
+internal class ReversedProgressionHandler(context: CommonBackendContext, val visitor: IrElementVisitor<HeaderInfo?, Nothing?>) :
+    ProgressionHandler {
 
     private val symbols = context.ir.symbols
 
-    override val matcher = createIrCallMatcher {
-        origin { it == IrStatementOrigin.FOR_LOOP_ITERATOR }
-        dispatchReceiver { it != null && ProgressionType.fromIrType(it.type, symbols) != null }
+    override val matcher = SimpleCalleeMatcher {
+        fqName { it == FqName("kotlin.ranges.reversed") }
+        extensionReceiver { it != null && it.type.toKotlinType() in symbols.progressionClassesTypes }
+        parameterCount { it == 0 }
     }
 
-    override fun build(call: IrCall, data: Nothing?): HeaderInfo? =
-        with(context.createIrBuilder(call.symbol, call.startOffset, call.endOffset)) {
-            // Directly use the `first/last/step` properties of the progression.
-            val progression = scope.createTemporaryVariable(call.dispatchReceiver!!)
-            val progressionClass = progression.type.getClass()!!
-            val firstProperty = progressionClass.properties.first { it.name.asString() == "first" }
-            val first = irCall(firstProperty.getter!!).apply {
-                dispatchReceiver = irGet(progression)
-            }
-            val lastProperty = progressionClass.properties.first { it.name.asString() == "last" }
-            val last = irCall(lastProperty.getter!!).apply {
-                dispatchReceiver = irGet(progression)
-            }
-            val stepProperty = progressionClass.properties.first { it.name.asString() == "step" }
-            val step = irCall(stepProperty.getter!!).apply {
-                dispatchReceiver = irGet(progression)
-            }
+    override fun build(call: IrCall, data: ProgressionType): HeaderInfo? {
+        // Get HeaderInfo from underlying progression.
+        val nestedInfo = call.extensionReceiver!!.accept(visitor, null)
+                as? ProgressionHeaderInfo ?: return null
 
-            ProgressionHeaderInfo(
-                ProgressionType.fromIrType(progression.type, symbols)!!,
-                first,
-                last,
-                step,
-                additionalVariables = listOf(progression)
-            )
+        // Swap first and last (and their inclusiveness), and negate step.
+        return ProgressionHeaderInfo(
+            data,
+            first = nestedInfo.last,
+            last = nestedInfo.first,
+            step = nestedInfo.step.negate(),
+            isFirstInclusive = nestedInfo.isLastInclusive,
+            isLastInclusive = nestedInfo.isFirstInclusive,
+            isReversed = !nestedInfo.isReversed,
+            canOverflow = null,  // Value from underlying progression can't be used since the bounds changed.
+            additionalVariables = nestedInfo.additionalVariables
+        )
+    }
+
+    /** Return the negated value if the expression is const, otherwise call unaryMinus(). */
+    private fun IrExpression.negate(): IrExpression {
+        val stepValue = (this as? IrConst<*>)?.value as? Number
+        return when (stepValue) {
+            is Int -> IrConstImpl(startOffset, endOffset, type, IrConstKind.Int, -stepValue)
+            is Long -> IrConstImpl(startOffset, endOffset, type, IrConstKind.Long, -stepValue)
+            else -> {
+                val unaryMinusFun = type.getClass()!!.functions.first { it.name.asString() == "unaryMinus" }
+                IrCallImpl(startOffset, endOffset, type, unaryMinusFun.symbol, unaryMinusFun.descriptor).apply {
+                    dispatchReceiver = this@negate
+                }
+            }
         }
+    }
 }
 
 /** Builds a [HeaderInfo] for arrays. */
