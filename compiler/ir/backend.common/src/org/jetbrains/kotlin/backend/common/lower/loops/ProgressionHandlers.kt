@@ -7,6 +7,7 @@ package org.jetbrains.kotlin.backend.common.lower.loops
 
 import org.jetbrains.kotlin.backend.common.CommonBackendContext
 import org.jetbrains.kotlin.backend.common.lower.createIrBuilder
+import org.jetbrains.kotlin.backend.common.lower.matchers.Quantifier
 import org.jetbrains.kotlin.backend.common.lower.matchers.SimpleCalleeMatcher
 import org.jetbrains.kotlin.backend.common.lower.matchers.createIrCallMatcher
 import org.jetbrains.kotlin.backend.common.lower.matchers.singleArgumentExtension
@@ -15,12 +16,10 @@ import org.jetbrains.kotlin.ir.builders.irCall
 import org.jetbrains.kotlin.ir.builders.irGet
 import org.jetbrains.kotlin.ir.builders.irInt
 import org.jetbrains.kotlin.ir.declarations.IrDeclarationOrigin
-import org.jetbrains.kotlin.ir.expressions.*
-import org.jetbrains.kotlin.ir.expressions.impl.IrCallImpl
-import org.jetbrains.kotlin.ir.expressions.impl.IrConstImpl
+import org.jetbrains.kotlin.ir.expressions.IrCall
+import org.jetbrains.kotlin.ir.expressions.IrExpression
 import org.jetbrains.kotlin.ir.types.getClass
 import org.jetbrains.kotlin.ir.types.toKotlinType
-import org.jetbrains.kotlin.ir.util.functions
 import org.jetbrains.kotlin.ir.util.properties
 import org.jetbrains.kotlin.ir.visitors.IrElementVisitor
 import org.jetbrains.kotlin.name.FqName
@@ -30,6 +29,7 @@ import org.jetbrains.kotlin.types.SimpleType
 /** Builds a [HeaderInfo] for progressions built using the `rangeTo` function. */
 internal class RangeToHandler(private val context: CommonBackendContext, private val progressionElementTypes: Collection<SimpleType>) :
     ProgressionHandler {
+
     override val matcher = SimpleCalleeMatcher {
         dispatchReceiver { it != null && it.type.toKotlinType() in progressionElementTypes }
         fqName { it.pathSegments().last() == Name.identifier("rangeTo") }
@@ -37,12 +37,12 @@ internal class RangeToHandler(private val context: CommonBackendContext, private
         parameter(0) { it.type.toKotlinType() in progressionElementTypes }
     }
 
-    override fun build(call: IrCall, data: ProgressionType) =
-        with(context.createIrBuilder(call.symbol, call.startOffset, call.endOffset)) {
+    override fun build(expression: IrCall, data: ProgressionType) =
+        with(context.createIrBuilder(expression.symbol, expression.startOffset, expression.endOffset)) {
             ProgressionHeaderInfo(
                 data,
-                first = call.dispatchReceiver!!,
-                last = call.getValueArgument(0)!!,
+                first = expression.dispatchReceiver!!,
+                last = expression.getValueArgument(0)!!,
                 step = irInt(1)
             )
         }
@@ -51,18 +51,19 @@ internal class RangeToHandler(private val context: CommonBackendContext, private
 /** Builds a [HeaderInfo] for progressions built using the `downTo` extension function. */
 internal class DownToHandler(private val context: CommonBackendContext, private val progressionElementTypes: Collection<SimpleType>) :
     ProgressionHandler {
+
     override val matcher = SimpleCalleeMatcher {
         singleArgumentExtension(FqName("kotlin.ranges.downTo"), progressionElementTypes)
         parameterCount { it == 1 }
         parameter(0) { it.type.toKotlinType() in progressionElementTypes }
     }
 
-    override fun build(call: IrCall, data: ProgressionType): HeaderInfo? =
-        with(context.createIrBuilder(call.symbol, call.startOffset, call.endOffset)) {
+    override fun build(expression: IrCall, data: ProgressionType): HeaderInfo? =
+        with(context.createIrBuilder(expression.symbol, expression.startOffset, expression.endOffset)) {
             ProgressionHeaderInfo(
                 data,
-                first = call.extensionReceiver!!,
-                last = call.getValueArgument(0)!!,
+                first = expression.extensionReceiver!!,
+                last = expression.getValueArgument(0)!!,
                 step = irInt(-1)
             )
         }
@@ -71,18 +72,19 @@ internal class DownToHandler(private val context: CommonBackendContext, private 
 /** Builds a [HeaderInfo] for progressions built using the `until` extension function. */
 internal class UntilHandler(private val context: CommonBackendContext, private val progressionElementTypes: Collection<SimpleType>) :
     ProgressionHandler {
+
     override val matcher = SimpleCalleeMatcher {
         singleArgumentExtension(FqName("kotlin.ranges.until"), progressionElementTypes)
         parameterCount { it == 1 }
         parameter(0) { it.type.toKotlinType() in progressionElementTypes }
     }
 
-    override fun build(call: IrCall, data: ProgressionType): HeaderInfo? =
-        with(context.createIrBuilder(call.symbol, call.startOffset, call.endOffset)) {
+    override fun build(expression: IrCall, data: ProgressionType): HeaderInfo? =
+        with(context.createIrBuilder(expression.symbol, expression.startOffset, expression.endOffset)) {
             ProgressionHeaderInfo(
                 data,
-                first = call.extensionReceiver!!,
-                last = call.getValueArgument(0)!!,
+                first = expression.extensionReceiver!!,
+                last = expression.getValueArgument(0)!!,
                 step = irInt(1),
                 isLastInclusive = false,
                 canOverflow = false
@@ -101,12 +103,12 @@ internal class IndicesHandler(val context: CommonBackendContext) : ProgressionHa
         parameterCount { it == 0 }
     }
 
-    override fun build(call: IrCall, data: ProgressionType): HeaderInfo? =
-        with(context.createIrBuilder(call.symbol, call.startOffset, call.endOffset)) {
+    override fun build(expression: IrCall, data: ProgressionType): HeaderInfo? =
+        with(context.createIrBuilder(expression.symbol, expression.startOffset, expression.endOffset)) {
             // `last = array.size` for the loop `for (i in array.indices)`.
-            val arraySizeProperty = call.extensionReceiver!!.type.getClass()!!.properties.first { it.name.asString() == "size" }
+            val arraySizeProperty = expression.extensionReceiver!!.type.getClass()!!.properties.first { it.name.asString() == "size" }
             val last = irCall(arraySizeProperty.getter!!).apply {
-                dispatchReceiver = call.extensionReceiver
+                dispatchReceiver = expression.extensionReceiver
             }
 
             ProgressionHeaderInfo(
@@ -120,64 +122,95 @@ internal class IndicesHandler(val context: CommonBackendContext) : ProgressionHa
         }
 }
 
-// TODO: Handle Array.reversed()
-internal class ReversedProgressionHandler(context: CommonBackendContext, val visitor: IrElementVisitor<HeaderInfo?, Nothing?>) :
-    ProgressionHandler {
+/** Builds a [HeaderInfo] for calls to reverse a progression or array. */
+internal class ReversedHandler(context: CommonBackendContext, val visitor: IrElementVisitor<HeaderInfo?, Nothing?>) :
+    HeaderInfoFromCallHandler<Nothing?> {
 
     private val symbols = context.ir.symbols
 
-    override val matcher = SimpleCalleeMatcher {
-        fqName { it == FqName("kotlin.ranges.reversed") }
-        extensionReceiver { it != null && it.type.toKotlinType() in symbols.progressionClassesTypes }
-        parameterCount { it == 0 }
-    }
+    // Use Quantifier.ANY so we can handle reversed progressions and arrays in the same manner.
+    override val matcher = createIrCallMatcher(Quantifier.ANY) {
+        // Matcher for reversed progression.
+        callee {
+            fqName { it == FqName("kotlin.ranges.reversed") }
+            extensionReceiver { it != null && it.type.toKotlinType() in symbols.progressionClassesTypes }
+            parameterCount { it == 0 }
+        }
 
-    override fun build(call: IrCall, data: ProgressionType): HeaderInfo? {
-        // Get HeaderInfo from underlying progression.
-        val nestedInfo = call.extensionReceiver!!.accept(visitor, null)
-                as? ProgressionHeaderInfo ?: return null
+        // Matcher for reversed array using Array.reversedArray().
+        callee {
+            fqName { it == FqName("kotlin.collections.reversedArray") }
+            extensionReceiver { it != null && KotlinBuiltIns.isArrayOrPrimitiveArray(it.type.toKotlinType()) }
+            parameterCount { it == 0 }
+        }
 
-        // Swap first and last (and their inclusiveness), and negate step.
-        return ProgressionHeaderInfo(
-            data,
-            first = nestedInfo.last,
-            last = nestedInfo.first,
-            step = nestedInfo.step.negate(),
-            isFirstInclusive = nestedInfo.isLastInclusive,
-            isLastInclusive = nestedInfo.isFirstInclusive,
-            isReversed = !nestedInfo.isReversed,
-            canOverflow = null,  // Value from underlying progression can't be used since the bounds changed.
-            additionalVariables = nestedInfo.additionalVariables
-        )
-    }
-
-    /** Return the negated value if the expression is const, otherwise call unaryMinus(). */
-    private fun IrExpression.negate(): IrExpression {
-        val stepValue = (this as? IrConst<*>)?.value as? Number
-        return when (stepValue) {
-            is Int -> IrConstImpl(startOffset, endOffset, type, IrConstKind.Int, -stepValue)
-            is Long -> IrConstImpl(startOffset, endOffset, type, IrConstKind.Long, -stepValue)
-            else -> {
-                val unaryMinusFun = type.getClass()!!.functions.first { it.name.asString() == "unaryMinus" }
-                IrCallImpl(startOffset, endOffset, type, unaryMinusFun.symbol, unaryMinusFun.descriptor).apply {
-                    dispatchReceiver = this@negate
+        // Matcher for reversed array using Array.reversed().
+        callee {
+            fqName { it == FqName("kotlin.collections.reversed") }
+            extensionReceiver {
+                // The reversed() extension function exists for both Array and Iterable. We want to match either for
+                // chained calls to reversed() on an Array. In the given for-loop:
+                //
+                //   for (i in someArray.reversed().reversed())
+                //
+                // `someArray.reversed()` returns a List (an Iterable). We want to match the call to reversed() on the
+                // `someArray.reversed()` so that we can recursively get the HeaderInfo from `someArray` at the start
+                // of the chain.
+                it != null && it.type.toKotlinType().run {
+                    (KotlinBuiltIns.isArrayOrPrimitiveArray(this) ||
+                            KotlinBuiltIns.isIterableOrNullableIterable(this))
                 }
             }
+            parameterCount { it == 0 }
         }
     }
+
+    // Reverse the HeaderInfo from the underlying progression or array (if any).
+    override fun build(expression: IrCall, data: Nothing?) = expression.extensionReceiver!!.accept(visitor, null)?.asReversed()
+}
+
+/** Builds a [HeaderInfo] for progressions not handled by more specialized handlers. */
+internal class DefaultProgressionHandler(private val context: CommonBackendContext) : ExpressionHandler {
+
+    private val symbols = context.ir.symbols
+
+    override fun match(expression: IrExpression) = ProgressionType.fromIrType(expression.type, symbols) != null
+
+    override fun build(expression: IrExpression): HeaderInfo? =
+        with(context.createIrBuilder(expression.type.getClass()!!.symbol, expression.startOffset, expression.endOffset)) {
+            // Directly use the `first/last/step` properties of the progression.
+            val progression = scope.createTemporaryVariable(expression)
+            val progressionClass = progression.type.getClass()!!
+            val firstProperty = progressionClass.properties.first { it.name.asString() == "first" }
+            val first = irCall(firstProperty.getter!!).apply {
+                dispatchReceiver = irGet(progression)
+            }
+            val lastProperty = progressionClass.properties.first { it.name.asString() == "last" }
+            val last = irCall(lastProperty.getter!!).apply {
+                dispatchReceiver = irGet(progression)
+            }
+            val stepProperty = progressionClass.properties.first { it.name.asString() == "step" }
+            val step = irCall(stepProperty.getter!!).apply {
+                dispatchReceiver = irGet(progression)
+            }
+
+            ProgressionHeaderInfo(
+                ProgressionType.fromIrType(progression.type, symbols)!!,
+                first,
+                last,
+                step,
+                additionalVariables = listOf(progression)
+            )
+        }
 }
 
 /** Builds a [HeaderInfo] for arrays. */
-internal class ArrayIterationHandler(private val context: CommonBackendContext) : HeaderInfoHandler<Nothing?> {
+internal class ArrayIterationHandler(private val context: CommonBackendContext) : ExpressionHandler {
 
-    override val matcher = createIrCallMatcher {
-        origin { it == IrStatementOrigin.FOR_LOOP_ITERATOR }
-        // TODO: Support rare cases like `T : IntArray`
-        dispatchReceiver { it != null && KotlinBuiltIns.isArrayOrPrimitiveArray(it.type.toKotlinType()) }
-    }
+    override fun match(expression: IrExpression) = KotlinBuiltIns.isArrayOrPrimitiveArray(expression.type.toKotlinType())
 
-    override fun build(call: IrCall, data: Nothing?): HeaderInfo? =
-        with(context.createIrBuilder(call.symbol, call.startOffset, call.endOffset)) {
+    override fun build(expression: IrExpression): HeaderInfo? =
+        with(context.createIrBuilder(expression.type.getClass()!!.symbol, expression.startOffset, expression.endOffset)) {
             // Consider the case like:
             //
             //   for (elem in A) { f(elem) }`
@@ -194,7 +227,7 @@ internal class ArrayIterationHandler(private val context: CommonBackendContext) 
             // This also ensures that the semantics of re-assignment of array variables used in the loop is consistent with the semantics
             // proposed in https://youtrack.jetbrains.com/issue/KT-21354.
             val arrayReference = scope.createTemporaryVariable(
-                call.dispatchReceiver!!, nameHint = "array",
+                expression, nameHint = "array",
                 origin = IrDeclarationOrigin.FOR_LOOP_IMPLICIT_VARIABLE
             )
 

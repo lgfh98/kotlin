@@ -1936,9 +1936,19 @@ public class BytecodeTextTestGenerated extends AbstractBytecodeTextTest {
                 KotlinTestUtils.assertAllTestsPresentByMetadata(this.getClass(), new File("compiler/testData/codegen/bytecodeText/forLoop/forInReversed"), Pattern.compile("^(.+)\\.kt$"), TargetBackend.JVM, true);
             }
 
+            @TestMetadata("forInReversedArray.kt")
+            public void testForInReversedArray() throws Exception {
+                runTest("compiler/testData/codegen/bytecodeText/forLoop/forInReversed/forInReversedArray.kt");
+            }
+
             @TestMetadata("forInReversedArrayIndices.kt")
             public void testForInReversedArrayIndices() throws Exception {
                 runTest("compiler/testData/codegen/bytecodeText/forLoop/forInReversed/forInReversedArrayIndices.kt");
+            }
+
+            @TestMetadata("forInReversedArrayUsingReversedArray.kt")
+            public void testForInReversedArrayUsingReversedArray() throws Exception {
+                runTest("compiler/testData/codegen/bytecodeText/forLoop/forInReversed/forInReversedArrayUsingReversedArray.kt");
             }
 
             @TestMetadata("forInReversedCharSequenceIndices.kt")
@@ -1956,6 +1966,11 @@ public class BytecodeTextTestGenerated extends AbstractBytecodeTextTest {
                 runTest("compiler/testData/codegen/bytecodeText/forLoop/forInReversed/forInReversedDownTo.kt");
             }
 
+            @TestMetadata("forInReversedEmptyArray.kt")
+            public void testForInReversedEmptyArray() throws Exception {
+                runTest("compiler/testData/codegen/bytecodeText/forLoop/forInReversed/forInReversedEmptyArray.kt");
+            }
+
             @TestMetadata("forInReversedEmptyRangeLiteral.kt")
             public void testForInReversedEmptyRangeLiteral() throws Exception {
                 runTest("compiler/testData/codegen/bytecodeText/forLoop/forInReversed/forInReversedEmptyRangeLiteral.kt");
@@ -1971,9 +1986,34 @@ public class BytecodeTextTestGenerated extends AbstractBytecodeTextTest {
                 runTest("compiler/testData/codegen/bytecodeText/forLoop/forInReversed/forInReversedRangeLiteral.kt");
             }
 
+            @TestMetadata("forInReversedReversedArray.kt")
+            public void testForInReversedReversedArray() throws Exception {
+                runTest("compiler/testData/codegen/bytecodeText/forLoop/forInReversed/forInReversedReversedArray.kt");
+            }
+
+            @TestMetadata("forInReversedReversedArrayUsingReversedArray.kt")
+            public void testForInReversedReversedArrayUsingReversedArray() throws Exception {
+                runTest("compiler/testData/codegen/bytecodeText/forLoop/forInReversed/forInReversedReversedArrayUsingReversedArray.kt");
+            }
+
             @TestMetadata("ForInReversedReversedRange.kt")
             public void testForInReversedReversedRange() throws Exception {
                 runTest("compiler/testData/codegen/bytecodeText/forLoop/forInReversed/ForInReversedReversedRange.kt");
+            }
+
+            @TestMetadata("forInReversedReversedReversedArray.kt")
+            public void testForInReversedReversedReversedArray() throws Exception {
+                runTest("compiler/testData/codegen/bytecodeText/forLoop/forInReversed/forInReversedReversedReversedArray.kt");
+            }
+
+            @TestMetadata("forInReversedReversedReversedArrayUsingCombination.kt")
+            public void testForInReversedReversedReversedArrayUsingCombination() throws Exception {
+                runTest("compiler/testData/codegen/bytecodeText/forLoop/forInReversed/forInReversedReversedReversedArrayUsingCombination.kt");
+            }
+
+            @TestMetadata("forInReversedReversedReversedArrayUsingReversedArray.kt")
+            public void testForInReversedReversedReversedArrayUsingReversedArray() throws Exception {
+                runTest("compiler/testData/codegen/bytecodeText/forLoop/forInReversed/forInReversedReversedReversedArrayUsingReversedArray.kt");
             }
 
             @TestMetadata("forInReversedReversedReversedRange.kt")

@@ -15,6 +15,7 @@ import org.jetbrains.kotlin.ir.IrStatement
 import org.jetbrains.kotlin.ir.builders.*
 import org.jetbrains.kotlin.ir.declarations.IrDeclarationOrigin
 import org.jetbrains.kotlin.ir.declarations.IrVariable
+import org.jetbrains.kotlin.ir.expressions.IrCall
 import org.jetbrains.kotlin.ir.expressions.IrExpression
 import org.jetbrains.kotlin.ir.expressions.IrLoop
 import org.jetbrains.kotlin.ir.expressions.impl.IrCallImpl
@@ -224,7 +225,14 @@ internal class ArrayLoopHeader(
             condition = buildLoopCondition(this@with)
             body = newBody
         }
-        LoopReplacement(newLoop, newLoop)
+        val replacementExpression = if (!headerInfo.isFirstInclusive) {
+            // Pre-increment the induction variable.
+            irComposite(newLoop) {
+                +buildIncrementInductionVariableExpression(this@with)
+                +newLoop
+            }
+        } else newLoop
+        LoopReplacement(newLoop, replacementExpression)
     }
 }
 
@@ -254,8 +262,11 @@ internal class HeaderProcessor(
             return null
         }
 
-        // Collect loop information.
-        val headerInfo = headerInfoBuilder.build(variable)
+        // Get the iterable expression, e.g., `someIterable` in the following loop variable declaration:
+        //   val it = someIterable.iterator()
+        val iterable = (variable.initializer as? IrCall)?.dispatchReceiver
+        // Collect loop information from the iterable expression.
+        val headerInfo = iterable?.accept(headerInfoBuilder, null)
             ?: return null  // If the iterable is not supported.
 
         val builder = context.createIrBuilder(scopeOwnerSymbol(), variable.startOffset, variable.endOffset)

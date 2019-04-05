@@ -16167,9 +16167,19 @@ public class JsCodegenBoxTestGenerated extends AbstractJsCodegenBoxTest {
                 KotlinTestUtils.assertAllTestsPresentByMetadata(this.getClass(), new File("compiler/testData/codegen/box/ranges/forInReversed"), Pattern.compile("^(.+)\\.kt$"), TargetBackend.JS, true);
             }
 
+            @TestMetadata("forInReversedArray.kt")
+            public void testForInReversedArray() throws Exception {
+                runTest("compiler/testData/codegen/box/ranges/forInReversed/forInReversedArray.kt");
+            }
+
             @TestMetadata("forInReversedArrayIndices.kt")
             public void testForInReversedArrayIndices() throws Exception {
                 runTest("compiler/testData/codegen/box/ranges/forInReversed/forInReversedArrayIndices.kt");
+            }
+
+            @TestMetadata("forInReversedArrayUsingReversedArray.kt")
+            public void testForInReversedArrayUsingReversedArray() throws Exception {
+                runTest("compiler/testData/codegen/box/ranges/forInReversed/forInReversedArrayUsingReversedArray.kt");
             }
 
             @TestMetadata("forInReversedCharSequenceIndices.kt")
@@ -16185,6 +16195,11 @@ public class JsCodegenBoxTestGenerated extends AbstractJsCodegenBoxTest {
             @TestMetadata("forInReversedDownTo.kt")
             public void testForInReversedDownTo() throws Exception {
                 runTest("compiler/testData/codegen/box/ranges/forInReversed/forInReversedDownTo.kt");
+            }
+
+            @TestMetadata("forInReversedEmptyArray.kt")
+            public void testForInReversedEmptyArray() throws Exception {
+                runTest("compiler/testData/codegen/box/ranges/forInReversed/forInReversedEmptyArray.kt");
             }
 
             @TestMetadata("forInReversedEmptyRange.kt")
@@ -16217,9 +16232,34 @@ public class JsCodegenBoxTestGenerated extends AbstractJsCodegenBoxTest {
                 runTest("compiler/testData/codegen/box/ranges/forInReversed/forInReversedRangeLiteralWithNonConstBounds.kt");
             }
 
+            @TestMetadata("forInReversedReversedArray.kt")
+            public void testForInReversedReversedArray() throws Exception {
+                runTest("compiler/testData/codegen/box/ranges/forInReversed/forInReversedReversedArray.kt");
+            }
+
+            @TestMetadata("forInReversedReversedArrayUsingReversedArray.kt")
+            public void testForInReversedReversedArrayUsingReversedArray() throws Exception {
+                runTest("compiler/testData/codegen/box/ranges/forInReversed/forInReversedReversedArrayUsingReversedArray.kt");
+            }
+
             @TestMetadata("ForInReversedReversedRange.kt")
             public void testForInReversedReversedRange() throws Exception {
                 runTest("compiler/testData/codegen/box/ranges/forInReversed/ForInReversedReversedRange.kt");
+            }
+
+            @TestMetadata("forInReversedReversedReversedArray.kt")
+            public void testForInReversedReversedReversedArray() throws Exception {
+                runTest("compiler/testData/codegen/box/ranges/forInReversed/forInReversedReversedReversedArray.kt");
+            }
+
+            @TestMetadata("forInReversedReversedReversedArrayUsingCombination.kt")
+            public void testForInReversedReversedReversedArrayUsingCombination() throws Exception {
+                runTest("compiler/testData/codegen/box/ranges/forInReversed/forInReversedReversedReversedArrayUsingCombination.kt");
+            }
+
+            @TestMetadata("forInReversedReversedReversedArrayUsingReversedArray.kt")
+            public void testForInReversedReversedReversedArrayUsingReversedArray() throws Exception {
+                runTest("compiler/testData/codegen/box/ranges/forInReversed/forInReversedReversedReversedArrayUsingReversedArray.kt");
             }
 
             @TestMetadata("forInReversedReversedReversedRange.kt")

@@ -41,7 +41,9 @@ internal class IrCallOriginMatcher(
     override fun invoke(call: IrCall) = restriction(call.origin)
 }
 
-internal open class IrCallMatcherContainer : IrCallMatcher {
+internal enum class Quantifier { ALL, ANY }
+
+internal open class IrCallMatcherContainer(private val quantifier: Quantifier) : IrCallMatcher {
 
     private val matchers = mutableListOf<IrCallMatcher>()
 
@@ -62,8 +64,14 @@ internal open class IrCallMatcherContainer : IrCallMatcher {
     fun dispatchReceiver(restriction: (IrExpression?) -> Boolean) =
         add(IrCallDispatchReceiverMatcher(restriction))
 
-    override fun invoke(call: IrCall) = matchers.all { it(call) }
+    override fun invoke(call: IrCall) = when (quantifier) {
+        Quantifier.ALL -> matchers.all { it(call) }
+        Quantifier.ANY -> matchers.any { it(call) }
+    }
 }
 
-internal fun createIrCallMatcher(restrictions: IrCallMatcherContainer.() -> Unit) =
-    IrCallMatcherContainer().apply(restrictions)
+internal fun createIrCallMatcher(
+    quantifier: Quantifier = Quantifier.ALL,
+    restrictions: IrCallMatcherContainer.() -> Unit
+) =
+    IrCallMatcherContainer(quantifier).apply(restrictions)

@@ -7,20 +7,20 @@ package org.jetbrains.kotlin.backend.common.lower.loops
 
 import org.jetbrains.kotlin.backend.common.CommonBackendContext
 import org.jetbrains.kotlin.backend.common.ir.Symbols
-import org.jetbrains.kotlin.backend.common.lower.createIrBuilder
 import org.jetbrains.kotlin.backend.common.lower.matchers.IrCallMatcher
 import org.jetbrains.kotlin.ir.IrElement
-import org.jetbrains.kotlin.ir.builders.irCall
-import org.jetbrains.kotlin.ir.builders.irGet
 import org.jetbrains.kotlin.ir.declarations.IrVariable
 import org.jetbrains.kotlin.ir.descriptors.IrBuiltIns
 import org.jetbrains.kotlin.ir.expressions.IrCall
 import org.jetbrains.kotlin.ir.expressions.IrConst
+import org.jetbrains.kotlin.ir.expressions.IrConstKind
 import org.jetbrains.kotlin.ir.expressions.IrExpression
+import org.jetbrains.kotlin.ir.expressions.impl.IrCallImpl
+import org.jetbrains.kotlin.ir.expressions.impl.IrConstImpl
 import org.jetbrains.kotlin.ir.types.IrType
 import org.jetbrains.kotlin.ir.types.getClass
 import org.jetbrains.kotlin.ir.types.isSubtypeOfClass
-import org.jetbrains.kotlin.ir.util.properties
+import org.jetbrains.kotlin.ir.util.functions
 import org.jetbrains.kotlin.ir.visitors.IrElementVisitor
 import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.utils.addToStdlib.firstNotNullResult
@@ -81,6 +81,12 @@ internal sealed class HeaderInfo(
             else -> ProgressionDirection.UNKNOWN
         }
     }
+
+    /**
+     * Returns a copy of this [HeaderInfo] with the values reversed.
+     * I.e., first and last (and their inclusiveness) are swapped, step is negated.
+     */
+    abstract fun asReversed(): HeaderInfo
 }
 
 /** Information about a for-loop over a progression. */
@@ -126,6 +132,18 @@ internal class ProgressionHeaderInfo(
         }
         constLimitAsLong == lastValueAsLong
     }
+
+    override fun asReversed() = ProgressionHeaderInfo(
+        progressionType = progressionType,
+        first = last,
+        last = first,
+        step = step.negate(),
+        isFirstInclusive = isLastInclusive,
+        isLastInclusive = isFirstInclusive,
+        isReversed = !isReversed,
+        canOverflow = null,  // Value from underlying progression can't be used since the bounds changed.
+        additionalVariables = additionalVariables
+    )
 }
 
 /** Information about a for-loop over an array. The internal induction variable used is an Int. */
@@ -133,36 +151,75 @@ internal class ArrayHeaderInfo(
     first: IrExpression,
     last: IrExpression,
     step: IrExpression,
+    isFirstInclusive: Boolean = true,
+    isLastInclusive: Boolean = false,
+    isReversed: Boolean = false,
     val arrayVariable: IrVariable
 ) : HeaderInfo(
     ProgressionType.INT_PROGRESSION,
     first,
     last,
     step,
-    isFirstInclusive = true,
-    isLastInclusive = false,
-    isReversed = false
-)
+    isFirstInclusive,
+    isLastInclusive,
+    isReversed
+) {
+    override fun asReversed() = ArrayHeaderInfo(
+        first = last,
+        last = first,
+        step = step.negate(),
+        isFirstInclusive = isLastInclusive,
+        isLastInclusive = isFirstInclusive,
+        isReversed = !isReversed,
+        arrayVariable = arrayVariable
+    )
+}
 
-/** Matches a call to `iterator()` and builds a [HeaderInfo] out of the call's context. */
-internal interface HeaderInfoHandler<T> {
-    val matcher: IrCallMatcher
+/** Return the negated value if the expression is const, otherwise call unaryMinus(). */
+private fun IrExpression.negate(): IrExpression {
+    val stepValue = (this as? IrConst<*>)?.value as? Number
+    return when (stepValue) {
+        is Int -> IrConstImpl(startOffset, endOffset, type, IrConstKind.Int, -stepValue)
+        is Long -> IrConstImpl(startOffset, endOffset, type, IrConstKind.Long, -stepValue)
+        else -> {
+            val unaryMinusFun = type.getClass()!!.functions.first { it.name.asString() == "unaryMinus" }
+            IrCallImpl(startOffset, endOffset, type, unaryMinusFun.symbol, unaryMinusFun.descriptor).apply {
+                dispatchReceiver = this@negate
+            }
+        }
+    }
+}
 
-    fun build(call: IrCall, data: T): HeaderInfo?
+/** Matches an iterable expression and builds a [HeaderInfo] from the expression. */
+internal interface HeaderInfoHandler<E : IrExpression, D> {
+    /** Returns true if the handler can build a [HeaderInfo] from the expression. */
+    fun match(expression: E): Boolean
 
-    fun handle(irCall: IrCall, data: T) = if (matcher(irCall)) {
-        build(irCall, data)
+    /** Builds a [HeaderInfo] from the expression. */
+    fun build(expression: E, data: D): HeaderInfo?
+
+    fun handle(expression: E, data: D) = if (match(expression)) {
+        build(expression, data)
     } else {
         null
     }
 }
-internal typealias ProgressionHandler = HeaderInfoHandler<ProgressionType>
 
-/**
- * Handles a call to `iterator()` on more specialized forms of progressions, built using extension
- * and member functions/properties in the stdlib (e.g., `.indices`, `downTo`).
- */
-private class ProgressionHeaderInfoBuilder(val context: CommonBackendContext) : IrElementVisitor<HeaderInfo?, Nothing?> {
+internal interface ExpressionHandler : HeaderInfoHandler<IrExpression, Nothing?> {
+    fun build(expression: IrExpression): HeaderInfo?
+    override fun build(expression: IrExpression, data: Nothing?) = build(expression)
+}
+
+/** Matches a call to build an iterable and builds a [HeaderInfo] from the call's context. */
+internal interface HeaderInfoFromCallHandler<D> : HeaderInfoHandler<IrCall, D> {
+    val matcher: IrCallMatcher
+
+    override fun match(expression: IrCall) = matcher(expression)
+}
+
+internal typealias ProgressionHandler = HeaderInfoFromCallHandler<ProgressionType>
+
+internal class HeaderInfoBuilder(val context: CommonBackendContext) : IrElementVisitor<HeaderInfo?, Nothing?> {
 
     private val symbols = context.ir.symbols
 
@@ -173,63 +230,35 @@ private class ProgressionHeaderInfoBuilder(val context: CommonBackendContext) : 
         IndicesHandler(context),
         UntilHandler(context, progressionElementTypes),
         DownToHandler(context, progressionElementTypes),
-        RangeToHandler(context, progressionElementTypes),
-        ReversedProgressionHandler(context, this)
+        RangeToHandler(context, progressionElementTypes)
+    )
+
+    private val reversedHandler = ReversedHandler(context, this)
+
+    private val expressionHandlers = listOf(
+        ArrayIterationHandler(context),
+        DefaultProgressionHandler(context)
     )
 
     override fun visitElement(element: IrElement, data: Nothing?): HeaderInfo? = null
 
+    /** Builds a [HeaderInfo] for iterable expressions that are calls (e.g., `.reversed()`, `.indices`. */
     override fun visitCall(expression: IrCall, data: Nothing?): HeaderInfo? {
-        // Return the HeaderInfo from the first successful match.
+        // Return the HeaderInfo from the first successful match. First, try to match a `reversed()` call.
+        val reversedHeaderInfo = reversedHandler.handle(expression, null)
+        if (reversedHeaderInfo != null)
+            return reversedHeaderInfo
+
+        // Try to match a call to build a progression (e.g., `.indices`, `downTo`).
         val progressionType = ProgressionType.fromIrType(expression.type, symbols)
-            ?: return super.visitCall(expression, data)
-        return progressionHandlers.firstNotNullResult { it.handle(expression, progressionType) } ?: return super.visitCall(expression, data)
+        val progressionHeaderInfo =
+            progressionType?.run { progressionHandlers.firstNotNullResult { it.handle(expression, this) } }
+
+        return progressionHeaderInfo ?: super.visitCall(expression, data)
     }
 
+    /** Builds a [HeaderInfo] for iterable expressions not handled in [visitCall]. */
     override fun visitExpression(expression: IrExpression, data: Nothing?): HeaderInfo? {
-        // Build HeaderInfo for progressions not handled by more specialized handlers in visitCall().
-        return buildHeaderInfoIfProgression(expression) ?: super.visitExpression(expression, data)
-    }
-
-    private fun buildHeaderInfoIfProgression(expression: IrExpression): HeaderInfo? =
-        with(context.createIrBuilder(expression.type.getClass()!!.symbol, expression.startOffset, expression.endOffset)) {
-            val progressionType = ProgressionType.fromIrType(expression.type, symbols)
-                ?: return@with null  // Not a progression.
-
-            // Directly use the `first/last/step` properties of the progression.
-            val progression = scope.createTemporaryVariable(expression)
-            val progressionClass = progression.type.getClass()!!
-            val firstProperty = progressionClass.properties.first { it.name.asString() == "first" }
-            val first = irCall(firstProperty.getter!!).apply {
-                dispatchReceiver = irGet(progression)
-            }
-            val lastProperty = progressionClass.properties.first { it.name.asString() == "last" }
-            val last = irCall(lastProperty.getter!!).apply {
-                dispatchReceiver = irGet(progression)
-            }
-            // TODO: Use irInt(1) for step if progression is a Range (e.g., IntRange) and not a Progression.
-            val stepProperty = progressionClass.properties.first { it.name.asString() == "step" }
-            val step = irCall(stepProperty.getter!!).apply {
-                dispatchReceiver = irGet(progression)
-            }
-
-            ProgressionHeaderInfo(
-                progressionType,
-                first,
-                last,
-                step,
-                additionalVariables = listOf(progression)
-            )
-        }
-}
-
-internal class HeaderInfoBuilder(context: CommonBackendContext) {
-    private val progressionHeaderInfoBuilder = ProgressionHeaderInfoBuilder(context)
-    private val arrayIterationHandler = ArrayIterationHandler(context)
-
-    fun build(variable: IrVariable): HeaderInfo? {
-        val initializer = variable.initializer as IrCall
-        return arrayIterationHandler.handle(initializer, null)
-            ?: initializer.dispatchReceiver?.accept(progressionHeaderInfoBuilder, null)
+        return expressionHandlers.firstNotNullResult { it.handle(expression, null) } ?: return super.visitExpression(expression, data)
     }
 }
