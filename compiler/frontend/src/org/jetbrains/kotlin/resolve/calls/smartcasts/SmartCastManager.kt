@@ -33,6 +33,7 @@ import org.jetbrains.kotlin.resolve.scopes.receivers.ImplicitReceiver
 import org.jetbrains.kotlin.resolve.scopes.receivers.ReceiverValue
 import org.jetbrains.kotlin.types.KotlinType
 import org.jetbrains.kotlin.types.TypeUtils
+import org.jetbrains.kotlin.types.typeUtil.expandIntersectionTypeIfNecessary
 import java.util.*
 
 class SmartCastManager {
@@ -178,8 +179,11 @@ class SmartCastManager {
             recordExpressionType: Boolean
         ): SmartCastResult? {
             val calleeExpression = call?.calleeExpression
+            val expectedTypes = expectedType.expandIntersectionTypeIfNecessary()
+//            val expectedTypes = listOf(expectedType)
+
             for (possibleType in c.dataFlowInfo.getCollectedTypes(dataFlowValue, c.languageVersionSettings)) {
-                if (ArgumentTypeResolver.isSubtypeOfForArgumentType(possibleType, expectedType) &&
+                if (expectedTypes.any { ArgumentTypeResolver.isSubtypeOfForArgumentType(possibleType, it) } &&
                     (additionalPredicate == null || additionalPredicate(possibleType))
                 ) {
                     if (expression != null) {
