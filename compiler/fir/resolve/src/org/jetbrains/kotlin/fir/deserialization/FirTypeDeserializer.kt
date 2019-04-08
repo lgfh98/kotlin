@@ -5,22 +5,28 @@
 
 package org.jetbrains.kotlin.fir.deserialization
 
+import org.jetbrains.kotlin.fir.FirSession
+import org.jetbrains.kotlin.fir.declarations.impl.FirTypeParameterImpl
 import org.jetbrains.kotlin.fir.resolve.toTypeProjection
 import org.jetbrains.kotlin.fir.symbols.*
 import org.jetbrains.kotlin.fir.symbols.impl.FirClassSymbol
 import org.jetbrains.kotlin.fir.symbols.impl.FirTypeAliasSymbol
+import org.jetbrains.kotlin.fir.symbols.impl.FirTypeParameterSymbol
 import org.jetbrains.kotlin.fir.types.*
 import org.jetbrains.kotlin.fir.types.impl.ConeAbbreviatedTypeImpl
 import org.jetbrains.kotlin.fir.types.impl.ConeClassTypeImpl
 import org.jetbrains.kotlin.fir.types.impl.ConeTypeParameterTypeImpl
+import org.jetbrains.kotlin.fir.types.impl.FirResolvedTypeRefImpl
 import org.jetbrains.kotlin.metadata.ProtoBuf
 import org.jetbrains.kotlin.metadata.deserialization.*
 import org.jetbrains.kotlin.serialization.deserialization.ProtoEnumFlags
 import org.jetbrains.kotlin.serialization.deserialization.getClassId
 import org.jetbrains.kotlin.serialization.deserialization.getName
+import org.jetbrains.kotlin.types.Variance
 import java.util.*
 
 class FirTypeDeserializer(
+    val session: FirSession,
     val nameResolver: NameResolver,
     val typeTable: TypeTable,
     typeParameterProtos: List<ProtoBuf.TypeParameter>,
@@ -52,13 +58,38 @@ class FirTypeDeserializer(
     private fun typeParameterSymbol(typeParameterId: Int): ConeTypeParameterLookupTag? =
         typeParameterDescriptors[typeParameterId] ?: parent?.typeParameterSymbol(typeParameterId)
 
+
+    private fun ProtoBuf.TypeParameter.Variance.convertVariance(): Variance {
+        return when (this) {
+            ProtoBuf.TypeParameter.Variance.IN -> Variance.IN_VARIANCE
+            ProtoBuf.TypeParameter.Variance.OUT -> Variance.OUT_VARIANCE
+            ProtoBuf.TypeParameter.Variance.INV -> Variance.INVARIANT
+        }
+    }
+
     private val typeParameterDescriptors =
         if (typeParameterProtos.isEmpty()) {
             mapOf<Int, ConeTypeParameterSymbol>()
         } else {
             val result = LinkedHashMap<Int, ConeTypeParameterSymbol>()
             for ((index, proto) in typeParameterProtos.withIndex()) {
-                result[proto.id] = LibraryTypeParameterSymbol(nameResolver.getName(proto.name))
+                val symbol = FirTypeParameterSymbol()
+                val name = nameResolver.getName(proto.name)
+
+
+                FirTypeParameterImpl(
+                    session,
+                    null,
+                    symbol,
+                    name,
+                    proto.variance.convertVariance(),
+                    proto.reified
+                ).apply {
+                    proto.upperBoundList.mapTo(bounds) {
+                        FirResolvedTypeRefImpl(session, null, type(it), false, emptyList())
+                    }
+                }
+                result[proto.id] = symbol
             }
             result
         }
